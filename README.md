@@ -64,20 +64,30 @@ smartcity-honeypot/
 
 ## Getting Started
 
-1. **Clone the repository:**
+To download, install, and run the Smart City IoT Honeypot framework:
+
+1. **Clone the repository from GitHub:**
    ```bash
-   git clone https://github.com/yourusername/smartcity-honeypot.git
+   git clone https://github.com/vamshikrishna781/smartcity-honeypot.git
    cd smartcity-honeypot
    ```
 
-2. **Review and edit configuration templates as needed.**
-
-3. **Build and start the honeypots:**
+2. **Run the automated setup script:**
    ```bash
-   sudo docker compose up --build -d
+   chmod +x setup.sh
+   ./setup.sh
    ```
 
-4. **Access dashboards and logs as described in the documentation for each honeypot.
+This script will:
+- Install required system packages and Docker
+- Configure firewall rules
+- Build and start all honeypot containers automatically
+
+> **After setup, you may need to log out and log back in for Docker group changes to take effect.  
+> Check running containers with:**  
+> `sudo docker ps`
+
+Access dashboards and logs as described in the documentation for each honeypot.
 
 ---
 
