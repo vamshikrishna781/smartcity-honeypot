@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Honeypot Control Panel</title>
+</head>
+<body>
+    <h1>Honeypot Control Panel</h1>
+    <table border="1">
+        <tr>
+            <th>Name</th>
+            <th>Ports</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+        {% for honeypot in honeypots %}
+        <tr>
+            <td>{{ honeypot.name }}</td>
+            <td>{{ honeypot.ports | join(', ') }}</td>
+            <td>{{ containers.get(honeypot.name, 'not running') }}</td>
+            <td>
+                <a href="/control/{{ honeypot.name }}/start">Start</a> |
+                <a href="/control/{{ honeypot.name }}/stop">Stop</a> |
+                <a href="/control/{{ honeypot.name }}/restart">Restart</a> |
+                <a href="/test/{{ honeypot.name }}">Show Logs</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

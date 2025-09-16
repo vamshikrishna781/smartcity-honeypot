@@ -1,0 +1,128 @@
+# version field removed (obsolete)
+services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.2
+    container_name: es
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.2
+    container_name: kibana
+    # environment variables removed; use kibana.yml for config
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    volumes:
+      - /home/krishna/Documents/digipol/smartcity-honeypot/kibana.yml:/usr/share/kibana/config/kibana.yml
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.10.2
+    container_name: filebeat
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./data/cowrie:/data/cowrie:ro
+      - ./data/http_honeypot:/data/http_honeypot:ro
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+
+  http_honeypot:
+    build:
+      context: ./http_honeypot
+    container_name: http_honeypot
+    ports:
+      - "8080:5000"
+    volumes:
+      - ./data/http_honeypot:/app/data
+    restart: unless-stopped
+
+  cowrie:
+    build:
+      context: ./cowrie
+    container_name: cowrie
+    
+    ports:
+      - "2222:2222"  # SSH honeypot
+      - "2323:2323"  # Telnet honeypot
+    volumes:
+      - ./data/cowrie/var/log/cowrie:/cowrie/var/log/cowrie
+      - ./data/cowrie/var/run:/cowrie/var/run
+      - ./data/cowrie/var/lib/cowrie:/cowrie/var/lib/cowrie
+      - ./cowrie/etc:/cowrie/etc:ro
+      - ./cowrie/log:/cowrie/log
+      - ./cowrie/var:/cowrie/var
+    restart: unless-stopped
+    user: "1000:1000"
+
+  cameraobscura:
+    build:
+      context: ./cameraobscura
+    container_name: cameraobscura
+    ports:
+      - "554:554"    # RTSP
+      - "8081:8081"  # Admin/Web
+    volumes:
+      - ./data/cameraobscura:/cameraobscura/data
+    restart: unless-stopped
+
+  riotpot:
+    build:
+      context: ./riotpot
+    container_name: riotpot
+    ports:
+      - "7:20007"       # Echo
+      - "22:20022"      # SSH
+      - "23:20023"      # Telnet
+      - "80:28080"      # HTTP
+      - "502:20502"     # Modbus
+      - "21883:21883"    # MQTT
+      - "5683:25683"    # CoAP
+    volumes:
+      - ./data/riotpot:/riotpot/data
+    restart: unless-stopped
+
+  sip_honeypot:
+    build:
+      context: ./sip_honeypot
+    container_name: sip_honeypot
+    ports:
+      - "5060:5060/udp"   # SIP default port
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+
+volumes:
+  esdata:
+
+networks:
+  default:
+    external:
+      name: my-predefined-network

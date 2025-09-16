@@ -1,0 +1,8 @@
+server.host: "0.0.0.0"
+server.shutdownTimeout: "5s"
+elasticsearch.hosts: [ "http://elasticsearch:9200" ]
+elasticsearch.serviceAccountToken: "AAEAAWVsYXN0aWMva2liYW5hL2tpYmFuYS1zZXJ2aWNlOjFLaTlVQ0tEUngybVhYNzFSSF9WX1E"
+monitoring.ui.container.elasticsearch.enabled: true
+# Username: elastic
+# Password: 4pIRvzqI_q=BhHaOU01z
+

@@ -1,0 +1,33 @@
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /data/cowrie/*.log
+    - /data/cowrie/tty/*    # if cowrie tty logs exist
+  fields:
+    source_type: cowrie
+  fields_under_root: true
+
+- type: log
+  enabled: true
+  paths:
+    - /data/http_honeypot/requests.log
+    - /data/http_honeypot/*.log
+  fields:
+    source_type: http_honeypot
+  fields_under_root: true
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  username: "elastic"
+  password: "aGS4LJzQvCNo*L5FFIu_"
+setup.kibana:
+  host: "kibana:5601"
+
+elasticsearch.username: "elastic"
+elasticsearch.password: "aGS4LJzQvCNo*L5FFIu_"
+
+environment:
+  - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+  - ELASTICSEARCH_USERNAME=elastic
+  - ELASTICSEARCH_PASSWORD=aGS4LJzQvCNo*L5FFIu_
