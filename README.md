@@ -91,30 +91,6 @@ Access dashboards and logs as described in the documentation for each honeypot.
 
 ---
 
-## Automated Setup
-
-To quickly set up all dependencies and run the honeypot framework, use the provided setup script:
-
-1. **Save the file as `setup.sh` in your project root (already included).**
-2. **Run the following commands:**
-   ```bash
-   chmod +x setup.sh
-   ./setup.sh
-   ```
-
-This script will:
-- Install required system packages and Docker
-- Configure firewall rules
-- Build and start all honeypot containers automatically
-
-> **After setup, you may need to log out and log back in for Docker group changes to take effect.  
-> Check running containers with:**  
-> `sudo docker ps`
-
-Access dashboards and logs as described in the documentation for each honeypot.
-
----
-
 ## Running the Control Panel
 
 To start and use the honeypot control panel:
