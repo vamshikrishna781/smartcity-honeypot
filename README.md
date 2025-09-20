@@ -115,6 +115,29 @@ Access dashboards and logs as described in the documentation for each honeypot.
 
 ---
 
+## Running the Control Panel
+
+To start and use the honeypot control panel:
+
+1. **Ensure all dependencies are installed and containers are running**  
+   (use the setup script as described above).
+
+2. **Run the control panel script:**
+   ```bash
+   python3 control_panel.py
+   ```
+
+3. **Follow the on-screen instructions** to interact with and monitor your honeypot services.
+
+> **Tip:**  
+> You may need to install additional Python packages if prompted.  
+> For example:
+> ```bash
+> pip3 install -r honeypot/requirements.txt
+> ```
+
+---
+
 ## Contributing
 
 Contributions, bug reports, and feature requests are welcome!  
