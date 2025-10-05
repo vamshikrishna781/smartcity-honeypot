@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY realtime_tracker.py .
+COPY requirements_realtime.txt .
+
+RUN pip install -r requirements_realtime.txt
+
+CMD ["python3", "realtime_tracker.py"]
