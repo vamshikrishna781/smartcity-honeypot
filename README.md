@@ -754,20 +754,6 @@ This honeypot system is designed for:
 
 Users are responsible for ensuring compliance with applicable laws and regulations in their jurisdiction.
 
-## 📞 Support & Community
-
-### Getting Help
-
-- **Documentation**: [GitHub Wiki](https://github.com/yourusername/smartcity-honeypot/wiki)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/smartcity-honeypot/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/smartcity-honeypot/discussions)
-- **Security**: Email security@yourproject.com for security-related issues
-
-### Community
-
-- **Discord**: [Join our Discord server](https://discord.gg/yourserver)
-- **Twitter**: [@YourProject](https://twitter.com/yourproject)
-- **Blog**: [Project Blog](https://blog.yourproject.com)
 
 ## 🏆 Acknowledgments
 
