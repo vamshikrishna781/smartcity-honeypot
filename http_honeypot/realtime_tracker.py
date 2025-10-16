@@ -1,6 +1,6 @@
 # http_honeypot/realtime_tracker.py
 import os, json, time, socket, threading
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, abort
 import requests
 from datetime import datetime, timedelta
 import sqlite3
@@ -12,10 +12,20 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Ensure data directory exists
-DATA_DIR = "/app/data"
+# configure DATA_DIR via env var with fallback to local writable dir
+# Default to project-local data/http_honeypot if DATA_DIR not set
+DEFAULT_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'http_honeypot'))
+DATA_DIR = os.environ.get('DATA_DIR', DEFAULT_DATA_DIR)
+
+# Try creating requested dir, fall back to a local dir if permission denied
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except PermissionError:
+    FALLBACK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
+    os.makedirs(FALLBACK_DIR, exist_ok=True)
+    DATA_DIR = FALLBACK_DIR
+
 EVIDENCE_DIR = os.path.join(DATA_DIR, "evidence")
-os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(EVIDENCE_DIR, exist_ok=True)
 
 # Database path
@@ -50,25 +60,15 @@ def init_db():
         logger.error(f"Database initialization failed: {e}")
         return False
 
-def log_attack(source_ip, target_port=8080, attack_type="http_probe", payload="", severity="medium"):
-    """Log an attack to the database"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        timestamp = time.time()
-        
-        cursor.execute('''
-            INSERT INTO attacks (timestamp, client_ip, path, method, risk_score)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (timestamp, source_ip, f"/{attack_type}", "GET", 50))
-        
-        conn.commit()
-        conn.close()
-        logger.info(f"Attack logged: {source_ip} -> {attack_type}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to log attack: {e}")
-        return False
+def log_attack(db_conn, client_ip, path, method, headers, payload, risk_score):
+    """Insert a new attack row with UNIX epoch seconds."""
+    ts = int(time.time())  # ensure seconds since epoch (not milliseconds / not zero)
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT INTO attacks(timestamp, client_ip, path, method, headers, payload, risk_score) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (ts, client_ip, path, method, json.dumps(dict(headers)), payload, risk_score)
+    )
+    db_conn.commit()
 
 # GeoIP and threat detection functions
 def get_geo_info(ip):
@@ -115,24 +115,36 @@ def calculate_risk_score(geo_info, is_tor, is_vpn, headers):
     
     return min(score, 100)
 
+# --- NEW: admin protection (allow only localhost or valid ADMIN_TOKEN) ---
+ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN')
+
+def require_admin_request():
+    # allow local requests (127.0.0.1 or ::1)
+    if request.remote_addr in ('127.0.0.1', '::1'):
+        return True
+    # allow requests with correct token header or ?token=...
+    token = request.headers.get('X-Admin-Token') or request.args.get('token')
+    if ADMIN_TOKEN and token and token == ADMIN_TOKEN:
+        return True
+    return False
+
+def admin_only_response():
+    # used in routes to block external access
+    if not require_admin_request():
+        abort(401)
+
 # API endpoints for dashboard
+# protect recent attacks API
 @app.route('/api/attacks/recent')
 def get_recent_attacks():
-    """Get recent attacks from the last 24 hours"""
+    admin_only_response()   # blocks external access
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
-        # Get attacks from last 24 hours
-        since = time.time() - (24 * 3600)
         cursor.execute('''
             SELECT timestamp, client_ip, path, method, risk_score
-            FROM attacks 
-            WHERE timestamp > ? 
-            ORDER BY timestamp DESC 
-            LIMIT 100
-        ''', (since,))
-        
+            FROM attacks ORDER BY timestamp DESC LIMIT 100
+        ''')
         attacks = []
         for row in cursor.fetchall():
             attacks.append({
@@ -142,48 +154,30 @@ def get_recent_attacks():
                 'method': row[3],
                 'risk_score': row[4]
             })
-        
         conn.close()
         return jsonify(attacks)
-    except Exception as e:
-        logger.error(f"Failed to get attacks: {e}")
+    except Exception:
         return jsonify([])
 
+# protect stats API
 @app.route('/api/stats')
 def get_stats():
-    """Get attack statistics"""
+    admin_only_response()   # blocks external access
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
-        # Count attacks in last 24 hours
         since = time.time() - (24 * 3600)
         cursor.execute('SELECT COUNT(*) FROM attacks WHERE timestamp > ?', (since,))
         recent_count = cursor.fetchone()[0]
-        
-        # Count by risk level
-        cursor.execute('''
-            SELECT 
-                CASE 
-                    WHEN risk_score >= 70 THEN 'high'
-                    WHEN risk_score >= 40 THEN 'medium'
-                    ELSE 'low'
-                END as level,
-                COUNT(*) 
-            FROM attacks 
-            WHERE timestamp > ? 
-            GROUP BY level
-        ''', (since,))
-        
-        risk_stats = dict(cursor.fetchall())
-        
+        # simple risk breakdown
+        cursor.execute('SELECT risk_score FROM attacks WHERE timestamp > ?', (since,))
+        rows = [r[0] for r in cursor.fetchall()]
+        high = sum(1 for r in rows if r >= 70)
+        medium = sum(1 for r in rows if 40 <= r < 70)
+        low = sum(1 for r in rows if r < 40)
         conn.close()
-        return jsonify({
-            'total_recent': recent_count,
-            'risk_breakdown': risk_stats
-        })
-    except Exception as e:
-        logger.error(f"Failed to get stats: {e}")
+        return jsonify({'total_recent': recent_count, 'risk_breakdown': {'high': high, 'medium': medium, 'low': low}})
+    except Exception:
         return jsonify({'total_recent': 0, 'risk_breakdown': {}})
 
 @app.route('/webrtc-collect', methods=['POST'])
@@ -320,77 +314,154 @@ def send_alert(attack_data):
     
     logger.warning(f"🚨 HIGH RISK ATTACK: {attack_data['client_ip']} -> {attack_data['path']} (Score: {attack_data['risk_score']})")
 
+# protect dashboard page (return 401 to remote clients)
 @app.route('/dashboard')
 def dashboard():
-    """Simple dashboard"""
-    html = '''
-    <!DOCTYPE html>
+    admin_only_response()
+    # existing dashboard HTML or redirect to admin_app if desired
+    return render_template_string("""
+    <html><head><title>Honeypot Dashboard</title></head>
+    <body><h1>Admin Dashboard (local only)</h1>
+    <p>Use the local admin app: http://127.0.0.1:5000/admin</p>
+    </body></html>
+    """)
+
+# === New: human-friendly pages for the API endpoints ===
+@app.route('/page/attacks')
+def attacks_page():
+    html = """
+    <!doctype html>
     <html>
     <head>
-        <title>Honeypot Real-time Tracker</title>
-        <meta http-equiv="refresh" content="10">
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .stats { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0; }
-            .attack { background: #ffe6e6; padding: 10px; margin: 5px 0; border-left: 4px solid #ff0000; }
-        </style>
+      <meta charset="utf-8"/>
+      <title>Recent Attacks - Honeypot</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;margin:20px;background:#f7f8fb}
+        table{width:100%;border-collapse:collapse;background:#fff}
+        th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
+        th{background:#f0f4f8}
+        .container{max-width:1000px;margin:0 auto}
+        .header{display:flex;justify-content:space-between;align-items:center}
+        .muted{color:#666;font-size:0.9rem}
+      </style>
     </head>
     <body>
-        <h1>🍯 Honeypot Real-time Tracker</h1>
-        <div class="stats">
-            <h3>Statistics (Last 24h)</h3>
-            <p>API Endpoints:</p>
-            <ul>
-                <li><a href="/api/attacks/recent">/api/attacks/recent</a> - Recent attacks</li>
-                <li><a href="/api/stats">/api/stats</a> - Attack statistics</li>
-            </ul>
+      <div class="container">
+        <div class="header">
+          <h1>Recent Attacks (Last 24h)</h1>
+          <div class="muted">Auto-refreshes every 10s</div>
         </div>
-        <div id="recent-attacks">
-            <h3>Recent Attacks</h3>
-            <div id="attacks-list">Loading...</div>
-        </div>
-        
-        <script>
-        async function loadAttacks() {
-            try {
-                const response = await fetch('/api/attacks/recent');
-                const attacks = await response.json();
-                const container = document.getElementById('attacks-list');
-                
-                if (attacks.length === 0) {
-                    container.innerHTML = '<p>No recent attacks detected</p>';
-                    return;
-                }
-                
-                container.innerHTML = attacks.slice(0, 10).map(attack => `
-                    <div class="attack">
-                        <strong>${attack.timestamp}</strong> - 
-                        IP: ${attack.source_ip} - 
-                        Path: ${attack.path} - 
-                        Risk: ${attack.risk_score}
-                    </div>
-                `).join('');
-            } catch (e) {
-                document.getElementById('attacks-list').innerHTML = '<p>Error loading attacks</p>';
+        <table id="attacks-table" aria-live="polite">
+          <thead><tr><th>Time</th><th>IP</th><th>Path</th><th>Method</th><th>Risk</th></tr></thead>
+          <tbody><tr><td colspan="5">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <script>
+        async function render() {
+          try {
+            const res = await fetch('/api/attacks/recent');
+            const attacks = await res.json();
+            const tbody = document.querySelector('#attacks-table tbody');
+            if (!attacks || attacks.length === 0) {
+              tbody.innerHTML = '<tr><td colspan="5">No recent attacks</td></tr>';
+              return;
             }
+            tbody.innerHTML = attacks.slice(0,200).map(a => {
+              const time = new Date(a.timestamp).toLocaleString();
+              return `<tr>
+                <td>${time}</td>
+                <td>${a.source_ip}</td>
+                <td>${a.path}</td>
+                <td>${a.method}</td>
+                <td>${a.risk_score}</td>
+              </tr>`;
+            }).join('');
+          } catch(e) {
+            document.querySelector('#attacks-table tbody').innerHTML = '<tr><td colspan="5">Error loading data</td></tr>';
+            console.error(e);
+          }
         }
-        
-        loadAttacks();
-        setInterval(loadAttacks, 10000);
-        </script>
+        render(); setInterval(render, 10000);
+      </script>
     </body>
     </html>
-    '''
+    """
+    return html
+
+@app.route('/page/stats')
+def stats_page():
+    html = """
+    <!doctype html>
+    <html>
+    <head>
+      <meta charset="utf-8"/>
+      <title>Attack Statistics - Honeypot</title>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;margin:20px;background:#f7f8fb}
+        .container{max-width:900px;margin:0 auto;background:#fff;padding:20px;border-radius:6px}
+        .row{display:flex;gap:20px;align-items:center}
+        .stat{flex:1;padding:10px}
+        .big{font-size:2rem;font-weight:700}
+        .label{color:#666}
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Attack Statistics (Last 24h)</h1>
+        <div class="row">
+          <div class="stat">
+            <div class="label">Total recent</div>
+            <div id="total" class="big">0</div>
+          </div>
+          <div style="flex:1">
+            <canvas id="riskChart" width="400" height="200"></canvas>
+          </div>
+        </div>
+        <h3>Raw JSON</h3>
+        <pre id="raw" style="max-height:300px;overflow:auto;background:#f4f6f8;padding:10px"></pre>
+      </div>
+
+      <script>
+        const ctx = document.getElementById('riskChart').getContext('2d');
+        const chart = new Chart(ctx, {
+          type: 'pie',
+          data: { labels: ['high','medium','low'], datasets: [{ data: [0,0,0], backgroundColor:['#e63946','#ffb703','#a8dadc'] }]},
+          options: { responsive:true }
+        });
+
+        async function loadStats() {
+          try {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+            document.getElementById('total').textContent = data.total_recent || 0;
+            const breakdown = data.risk_breakdown || {};
+            const high = breakdown.high || 0;
+            const medium = breakdown.medium || 0;
+            const low = breakdown.low || 0;
+            chart.data.datasets[0].data = [high, medium, low];
+            chart.update();
+            document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
+          } catch(e) {
+            document.getElementById('raw').textContent = 'Error loading stats';
+            console.error(e);
+          }
+        }
+
+        loadStats(); setInterval(loadStats, 10000);
+      </script>
+    </body>
+    </html>
+    """
     return html
 
 if __name__ == '__main__':
     # Initialize database
     if init_db():
-        # Add some test data
-        log_attack("192.168.1.100", 8080, "http_scan", "/admin", "high")
-        log_attack("10.0.0.50", 8080, "sql_injection", "' OR 1=1", "critical")
-        
-        logger.info("Starting realtime tracker on port 8080")
-        app.run(host='0.0.0.0', port=8080, debug=False)
+        logger.info("Starting realtime tracker")
+        port = int(os.environ.get('PORT', 8080))
+        logger.info(f"Listening on port {port}")
+        app.run(host='0.0.0.0', port=port, debug=False)
     else:
         logger.error("Failed to initialize database. Exiting.")

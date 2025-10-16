@@ -794,3 +794,82 @@ If this project helped you, please consider:
 **Made with ❤️ for the cybersecurity research community**
 
 *Last updated: October 2024*
+
+# If running locally (not in Docker), export a writable DATA_DIR:
+export DATA_DIR="$(pwd)/data/http_honeypot"
+
+## 🗂️ Utility & Management Tools Overview
+
+This project includes several management and monitoring utilities to help you control, observe, and administer the honeypot system. Below is a concise description of each tool, usage examples, and security notes.
+
+### cli_panel.py — Command-line control panel
+- Purpose: Interactive CLI to list/start/stop/restart containers, view logs, and start/stop all honeypots.
+- Key features:
+  - Finds containers by service name or project-prefixed names.
+  - Falls back to `docker compose up/down` if containers are missing.
+- Usage:
+  ```bash
+  source venv/bin/activate
+  python cli_panel.py
+  ```
+- Notes: Requires Docker CLI access from the user running the script.
+
+### control_panel.py — Web control panel
+- Purpose: Browser-based UI for container control (start/stop/restart) and basic status.
+- Bind address: By default binds to `0.0.0.0:5000`. Restrict to `127.0.0.1` if exposing to local host only.
+- Usage:
+  ```bash
+  source venv/bin/activate
+  python control_panel.py
+  # Open http://127.0.0.1:5000 (or the host IP shown)
+  ```
+- Security: Do not expose to the internet without authentication and TLS.
+
+### realtime_tracker.py — Main HTTP honeypot & tracker
+- Purpose: Simulates HTTP endpoints, logs attacks to SQLite and evidence files, provides APIs for recent attacks and stats.
+- Data location: `data/http_honeypot/attacks.db` and `data/http_honeypot/evidence/`.
+- Usage (local, writable data dir):
+  ```bash
+  export DATA_DIR="$(pwd)/data/http_honeypot"
+  python http_honeypot/realtime_tracker.py
+  ```
+- Notes:
+  - Admin endpoints (/dashboard, /api/attacks/recent, /api/stats) are protected — only local requests or requests with `ADMIN_TOKEN` allowed.
+  - Ensure the process can write `DATA_DIR` (avoid creating `/app` as root).
+
+### admin_app.py — Local admin UI (secure)
+- Purpose: Admin-only UI for viewing recent attacks, evidence files, and system health.
+- Security model:
+  - Binds to `127.0.0.1` by default.
+  - Allows localhost access without a token; remote access requires `ADMIN_TOKEN` via header `X-Admin-Token` or `?token=`.
+- Usage:
+  ```bash
+  export DATA_DIR="$(pwd)/data/http_honeypot"
+  export ADMIN_TOKEN="$(openssl rand -hex 16)"   # optional for remote access
+  python http_honeypot/admin_app.py
+  # Open http://127.0.0.1:5000/admin
+  ```
+- Do not publish this port in production or in Docker without additional access controls.
+
+### realtime_dashboard.py — Live SSE dashboard
+- Purpose: Streams new evidence JSON files (SSE) for live monitoring; used for local dashboards and demonstrations.
+- Usage:
+  ```bash
+  export DATA_DIR="$(pwd)/data/http_honeypot"
+  python scripts/realtime_dashboard.py
+  # Open the printed URL (default http://localhost:8082)
+  ```
+- Notes: Minimal dependencies; intended for local monitoring.
+
+## 🔒 Security & Deployment Recommendations
+- Always bind admin interfaces to loopback (127.0.0.1) or protect with a strong `ADMIN_TOKEN`.
+- Use firewall rules (ufw/iptables) to block management ports from the public internet.
+- Rotate admin tokens and protect backups (attack logs can contain sensitive data).
+- For production or public-facing honeypots, use strict isolation (separate VM/container network, limited egress, monitoring).
+
+## 🚀 Quick Recap: Where to run each tool
+- CLI: `python cli_panel.py` (interactive terminal)
+- Web control panel: `python control_panel.py` → open http://127.0.0.1:5000
+- Honeypot (HTTP): `python http_honeypot/realtime_tracker.py` → public honeypot endpoints
+- Admin UI: `python http_honeypot/admin_app.py` → open http://127.0.0.1:5000/admin
+- Real-time SSE dashboard: `python scripts/realtime_dashboard.py` → open reported URL
