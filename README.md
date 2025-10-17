@@ -94,7 +94,7 @@ This honeypot system provides real-time monitoring and analysis of attacks again
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/smartcity-honeypot.git
+git clone https://github.com/vamshikrishna781/smartcity-honeypot.git
 cd smartcity-honeypot
 
 # Run automated setup
@@ -140,7 +140,7 @@ pip install -r requirements.txt
 
 ```bash
 # Download the latest fixed setup script
-wget https://raw.githubusercontent.com/yourusername/smartcity-honeypot/main/setup.sh
+wget https://raw.githubusercontent.com/vamshikrishna781/smartcity-honeypot/main/setup.sh
 chmod +x setup.sh
 ./setup.sh
 ```
