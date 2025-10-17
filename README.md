@@ -693,7 +693,7 @@ We welcome contributions! Here's how to get started:
 
 ```bash
 # Fork the repository
-git clone https://github.com/yourusername/smartcity-honeypot.git
+git clone https://github.com/vamshikrishna781/smartcity-honeypot.git
 cd smartcity-honeypot
 
 # Create development environment
